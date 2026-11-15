@@ -1,6 +1,9 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
-import { loadSettings, setStartDate } from './settings'
+import type { Result } from '../shared/api'
+import { closeDb, getEntry } from './db'
+import { generateForDay } from './generate'
+import { getSettings, setApiKey, setModel, setStartDate } from './settings'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -33,12 +36,43 @@ function createWindow(): void {
   }
 }
 
+/** Roda uma ação e devolve o erro como dado, para a tela mostrar a mensagem limpa. */
+async function result<T>(action: () => T | Promise<T>): Promise<Result<T>> {
+  try {
+    return { ok: true, value: await action() }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+function asDay(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
+    throw new Error('Dia inválido.')
+  }
+  return value
+}
+
+/** Dias com geração em andamento, para não disparar duas chamadas para o mesmo dia. */
+const generating = new Set<number>()
+
 void app.whenReady().then(() => {
-  ipcMain.handle('settings:get', () => loadSettings())
-  ipcMain.handle('settings:setStartDate', (_event, startDate: unknown) => {
-    if (typeof startDate !== 'string') throw new TypeError('Data inválida')
-    return setStartDate(startDate)
-  })
+  ipcMain.handle('settings:get', () => getSettings())
+  ipcMain.handle('settings:setStartDate', (_e, v: unknown) => result(() => setStartDate(String(v))))
+  ipcMain.handle('settings:setModel', (_e, v: unknown) => result(() => setModel(String(v))))
+  ipcMain.handle('settings:setApiKey', (_e, v: unknown) => result(() => setApiKey(String(v))))
+  ipcMain.handle('entries:get', (_e, day: unknown) => getEntry(asDay(day)))
+  ipcMain.handle('entries:generate', (_e, value: unknown) =>
+    result(async () => {
+      const day = asDay(value)
+      if (generating.has(day)) throw new Error('Os textos deste dia já estão sendo gerados.')
+      generating.add(day)
+      try {
+        return await generateForDay(day)
+      } finally {
+        generating.delete(day)
+      }
+    })
+  )
 
   createWindow()
   app.on('activate', () => {
@@ -49,3 +83,5 @@ void app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
+
+app.on('will-quit', closeDb)

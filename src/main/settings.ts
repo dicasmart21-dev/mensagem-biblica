@@ -1,35 +1,95 @@
-import { app } from 'electron'
+import { app, safeStorage } from 'electron'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import type { Settings } from '../shared/api'
+import { DEFAULT_MODEL, MODELS, type ModelId, type Settings } from '../shared/api'
 import { dayNumberForDate, todayIso } from '../shared/rotation'
+
+/** O que fica gravado em settings.json. A chave da API só aparece cifrada. */
+interface Stored {
+  startDate: string
+  model: ModelId
+  /** Chave da API cifrada pelo cofre do sistema operacional, em base64. */
+  apiKeyEnc?: string
+}
 
 const file = (): string => join(app.getPath('userData'), 'settings.json')
 
-function save(settings: Settings): Settings {
+function save(stored: Stored): Stored {
   const path = file()
   mkdirSync(dirname(path), { recursive: true })
   // Grava em arquivo temporário e renomeia, para nunca deixar o arquivo pela metade.
-  writeFileSync(`${path}.tmp`, JSON.stringify(settings, null, 2))
+  writeFileSync(`${path}.tmp`, JSON.stringify(stored, null, 2))
   renameSync(`${path}.tmp`, path)
-  return settings
+  return stored
 }
 
-/** Lê as configurações; na primeira abertura, o dia 1 passa a ser hoje. */
-export function loadSettings(): Settings {
+const isModel = (value: unknown): value is ModelId => MODELS.some((m) => m.id === value)
+
+function isDate(value: unknown): value is string {
   try {
-    const parsed = JSON.parse(readFileSync(file(), 'utf8')) as Partial<Settings>
-    if (typeof parsed.startDate === 'string') {
-      dayNumberForDate(parsed.startDate, parsed.startDate) // valida o formato
-      return { startDate: parsed.startDate }
-    }
+    return typeof value === 'string' && dayNumberForDate(value, value) === 1
   } catch {
-    // arquivo ausente ou inválido: cai no padrão abaixo
+    return false
   }
-  return save({ startDate: todayIso() })
 }
+
+/** Lê o arquivo; na primeira abertura, o dia 1 passa a ser hoje. */
+function load(): Stored {
+  let parsed: Partial<Stored> | null = null
+  try {
+    parsed = JSON.parse(readFileSync(file(), 'utf8')) as Partial<Stored>
+  } catch {
+    // arquivo ausente ou ilegível: começa do zero
+  }
+  if (parsed && isDate(parsed.startDate)) {
+    return {
+      startDate: parsed.startDate,
+      model: isModel(parsed.model) ? parsed.model : DEFAULT_MODEL,
+      ...(typeof parsed.apiKeyEnc === 'string' ? { apiKeyEnc: parsed.apiKeyEnc } : {})
+    }
+  }
+  return save({ startDate: todayIso(), model: DEFAULT_MODEL })
+}
+
+/** Chave da API em texto claro, só para uso dentro do processo principal. */
+export function getApiKey(): string | null {
+  const { apiKeyEnc } = load()
+  if (apiKeyEnc && safeStorage.isEncryptionAvailable()) {
+    try {
+      return safeStorage.decryptString(Buffer.from(apiKeyEnc, 'base64'))
+    } catch {
+      return null
+    }
+  }
+  return process.env.ANTHROPIC_API_KEY || null
+}
+
+const toPublic = (stored: Stored): Settings => ({
+  startDate: stored.startDate,
+  model: stored.model,
+  hasApiKey: getApiKey() !== null
+})
+
+export const getSettings = (): Settings => toPublic(load())
 
 export function setStartDate(startDate: string): Settings {
-  dayNumberForDate(startDate, startDate) // lança RangeError se a data for inválida
-  return save({ ...loadSettings(), startDate })
+  if (!isDate(startDate)) throw new Error('Data de início inválida.')
+  return toPublic(save({ ...load(), startDate }))
+}
+
+export function setModel(model: string): Settings {
+  if (!isModel(model)) throw new Error('Modelo desconhecido.')
+  return toPublic(save({ ...load(), model }))
+}
+
+export function setApiKey(apiKey: string): Settings {
+  const { apiKeyEnc: _removed, ...rest } = load()
+  const trimmed = apiKey.trim()
+  if (!trimmed) return toPublic(save(rest))
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error(
+      'Este sistema não tem um cofre de senhas disponível para guardar a chave com segurança.'
+    )
+  }
+  return toPublic(save({ ...rest, apiKeyEnc: safeStorage.encryptString(trimmed).toString('base64') }))
 }
