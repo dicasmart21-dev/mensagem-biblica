@@ -1,0 +1,80 @@
+export interface Book {
+  /** Identificador estável, usado no banco e nos arquivos de texto bíblico. */
+  id: string
+  name: string
+  chapters: number
+  testament: 'AT' | 'NT'
+}
+
+const at = (id: string, name: string, chapters: number): Book => ({ id, name, chapters, testament: 'AT' })
+const nt = (id: string, name: string, chapters: number): Book => ({ id, name, chapters, testament: 'NT' })
+
+/** Os 66 livros na ordem canônica protestante. */
+export const BOOKS: readonly Book[] = [
+  at('gn', 'Gênesis', 50),
+  at('ex', 'Êxodo', 40),
+  at('lv', 'Levítico', 27),
+  at('nm', 'Números', 36),
+  at('dt', 'Deuteronômio', 34),
+  at('js', 'Josué', 24),
+  at('jz', 'Juízes', 21),
+  at('rt', 'Rute', 4),
+  at('1sm', '1 Samuel', 31),
+  at('2sm', '2 Samuel', 24),
+  at('1rs', '1 Reis', 22),
+  at('2rs', '2 Reis', 25),
+  at('1cr', '1 Crônicas', 29),
+  at('2cr', '2 Crônicas', 36),
+  at('ed', 'Esdras', 10),
+  at('ne', 'Neemias', 13),
+  at('et', 'Ester', 10),
+  at('jo', 'Jó', 42),
+  at('sl', 'Salmos', 150),
+  at('pv', 'Provérbios', 31),
+  at('ec', 'Eclesiastes', 12),
+  at('ct', 'Cânticos', 8),
+  at('is', 'Isaías', 66),
+  at('jr', 'Jeremias', 52),
+  at('lm', 'Lamentações', 5),
+  at('ez', 'Ezequiel', 48),
+  at('dn', 'Daniel', 12),
+  at('os', 'Oseias', 14),
+  at('jl', 'Joel', 3),
+  at('am', 'Amós', 9),
+  at('ob', 'Obadias', 1),
+  at('jn', 'Jonas', 4),
+  at('mq', 'Miqueias', 7),
+  at('na', 'Naum', 3),
+  at('hc', 'Habacuque', 3),
+  at('sf', 'Sofonias', 3),
+  at('ag', 'Ageu', 2),
+  at('zc', 'Zacarias', 14),
+  at('ml', 'Malaquias', 4),
+  nt('mt', 'Mateus', 28),
+  nt('mc', 'Marcos', 16),
+  nt('lc', 'Lucas', 24),
+  nt('joa', 'João', 21),
+  nt('at', 'Atos', 28),
+  nt('rm', 'Romanos', 16),
+  nt('1co', '1 Coríntios', 16),
+  nt('2co', '2 Coríntios', 13),
+  nt('gl', 'Gálatas', 6),
+  nt('ef', 'Efésios', 6),
+  nt('fp', 'Filipenses', 4),
+  nt('cl', 'Colossenses', 4),
+  nt('1ts', '1 Tessalonicenses', 5),
+  nt('2ts', '2 Tessalonicenses', 3),
+  nt('1tm', '1 Timóteo', 6),
+  nt('2tm', '2 Timóteo', 4),
+  nt('tt', 'Tito', 3),
+  nt('fm', 'Filemom', 1),
+  nt('hb', 'Hebreus', 13),
+  nt('tg', 'Tiago', 5),
+  nt('1pe', '1 Pedro', 5),
+  nt('2pe', '2 Pedro', 3),
+  nt('1jo', '1 João', 5),
+  nt('2jo', '2 João', 1),
+  nt('3jo', '3 João', 1),
+  nt('jd', 'Judas', 1),
+  nt('ap', 'Apocalipse', 22)
+]
