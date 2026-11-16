@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { TEXT_FIELDS, type Result, type TextField, type Texts } from '../shared/api'
 import { approvalBlockers } from '../shared/validate'
 import { importBibleFile, removeImportedBible } from './bible'
-import { closeDb, getEntry, setStatus, updateTexts } from './db'
+import { closeDb, getEntry, getStatuses, searchEntries, setStatus, updateTexts } from './db'
 import { generateForDay, regenerateText } from './generate'
 import { getSettings, setApiKey, setModel, setStartDate } from './settings'
 
@@ -84,6 +84,10 @@ void app.whenReady().then(() => {
   ipcMain.handle('settings:setModel', (_e, v: unknown) => result(() => setModel(String(v))))
   ipcMain.handle('settings:setApiKey', (_e, v: unknown) => result(() => setApiKey(String(v))))
   ipcMain.handle('entries:get', (_e, day: unknown) => getEntry(asDay(day)))
+  ipcMain.handle('entries:statuses', (_e, from: unknown, to: unknown) => getStatuses(asDay(from), asDay(to)))
+  ipcMain.handle('entries:search', (_e, query: unknown, status: unknown) =>
+    searchEntries(String(query ?? ''), status === 'draft' || status === 'approved' ? status : 'all')
+  )
   ipcMain.handle('bible:import', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)!
     const picked = await dialog.showOpenDialog(win, {

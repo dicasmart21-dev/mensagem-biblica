@@ -2,7 +2,9 @@ import { app } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import type { Entry, EntryStatus, Texts } from '../shared/api'
+import type { Entry, EntryStatus, EntrySummary, Texts } from '../shared/api'
+import { referenceForDay } from '../shared/rotation'
+import { matches } from '../shared/search'
 
 let db: DatabaseSync | null = null
 
@@ -52,6 +54,29 @@ const toEntry = (row: Row): Entry => ({
 export function getEntry(day: number): Entry | null {
   const row = open().prepare('SELECT * FROM entries WHERE day = ?').get(day) as Row | undefined
   return row ? toEntry(row) : null
+}
+
+export function getStatuses(fromDay: number, toDay: number): Record<number, EntryStatus> {
+  const rows = open()
+    .prepare('SELECT day, status FROM entries WHERE day BETWEEN ? AND ?')
+    .all(fromDay, toDay) as Row[]
+  return Object.fromEntries(rows.map((r) => [r.day, r.status])) as Record<number, EntryStatus>
+}
+
+/** Busca por livro/capítulo e pelo conteúdo dos quatro textos, do dia mais recente ao mais antigo. */
+export function searchEntries(query: string, status: EntryStatus | 'all'): EntrySummary[] {
+  const rows = open().prepare('SELECT * FROM entries ORDER BY day DESC').all() as Row[]
+  return rows
+    .map(toEntry)
+    .filter((e) => status === 'all' || e.status === status)
+    .filter((e) => matches([referenceForDay(e.day).label, ...Object.values(e.texts)].join('\n'), query))
+    .map((e) => ({
+      day: e.day,
+      status: e.status,
+      impact: e.texts.impact,
+      generatedAt: e.generatedAt,
+      approvedAt: e.approvedAt
+    }))
 }
 
 /** Grava textos recém-gerados como rascunho, substituindo o que houver para o dia. */

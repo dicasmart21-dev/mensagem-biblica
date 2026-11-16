@@ -17,16 +17,8 @@ const longDate = new Intl.DateTimeFormat('pt-BR', {
   year: 'numeric',
   timeZone: 'UTC'
 })
-const shortDate = new Intl.DateTimeFormat('pt-BR', {
-  weekday: 'short',
-  day: '2-digit',
-  month: '2-digit',
-  timeZone: 'UTC'
-})
 const dateTime = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
 const asDate = (iso: string): Date => new Date(`${iso}T00:00:00Z`)
-
-const UPCOMING = 14
 
 const FIELDS: Record<TextField, { title: string; rows: number; count(text: string): string }> = {
   impact: { title: 'Frase de impacto', rows: 2, count: (t) => `${[...t].length} caracteres` },
@@ -39,12 +31,19 @@ const sameTexts = (a: Texts, b: Texts): boolean => TEXT_FIELDS.every((f) => a[f]
 
 interface Props {
   settings: Settings
+  /** Dia da sequência a mostrar; sem isso, mostra o dia de hoje. */
+  day?: number
   onOpenSettings(): void
+  /** Quando presente, mostra um botão para voltar à tela anterior. */
+  onBack?(): void
 }
 
-export function Today({ settings, onOpenSettings }: Props) {
+export function DayView({ settings, day: chosen, onOpenSettings, onBack }: Props) {
   const today = todayIso()
-  const day = dayNumberForDate(settings.startDate, today)
+  const todayNumber = dayNumberForDate(settings.startDate, today)
+  const day = chosen ?? todayNumber
+  const date = day === null ? today : dateForDayNumber(settings.startDate, day)
+  const isToday = day !== null && day === todayNumber
 
   const [entry, setEntry] = useState<Entry | null>(null)
   /** Textos como estão na tela, incluindo edições ainda não salvas. */
@@ -141,9 +140,15 @@ export function Today({ settings, onOpenSettings }: Props) {
 
   return (
     <>
+      {onBack ? (
+        <button className="back" onClick={onBack}>
+          ← Voltar
+        </button>
+      ) : null}
       <section className="card">
         <p className="eyebrow">
-          Hoje · {longDate.format(asDate(today))}
+          {isToday ? 'Hoje · ' : ''}
+          {longDate.format(asDate(date))}
           {entry ? <span className={approved ? 'badge approved' : 'badge'}>{approved ? 'Aprovado' : 'Rascunho'}</span> : null}
         </p>
         <h2>{ref.label}</h2>
@@ -177,7 +182,7 @@ export function Today({ settings, onOpenSettings }: Props) {
               </>
             ) : (
               <button className="primary" disabled={busy !== null} onClick={() => void generateAll()}>
-                {busy === 'all' ? 'Gerando…' : 'Gerar textos de hoje'}
+                {busy === 'all' ? 'Gerando…' : isToday ? 'Gerar textos de hoje' : 'Gerar textos deste dia'}
               </button>
             )}
             {busy ? <span className="hint">Pode levar um ou dois minutos.</span> : null}
@@ -236,19 +241,6 @@ export function Today({ settings, onOpenSettings }: Props) {
           </p>
         </section>
       ) : null}
-
-      <section>
-        <h3>Próximos dias</h3>
-        <ol className="upcoming">
-          {Array.from({ length: UPCOMING }, (_, i) => day + 1 + i).map((n) => (
-            <li key={n}>
-              <span className="when">{shortDate.format(asDate(dateForDayNumber(settings.startDate, n)))}</span>
-              <span className="ref">{referenceForDay(n).label}</span>
-              <span className="num">dia {n}</span>
-            </li>
-          ))}
-        </ol>
-      </section>
     </>
   )
 }

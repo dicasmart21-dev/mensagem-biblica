@@ -44,6 +44,15 @@ export interface Entry {
   approvedAt: string | null
 }
 
+/** Resumo de um dia para o histórico. */
+export interface EntrySummary {
+  day: number
+  status: EntryStatus
+  impact: string
+  generatedAt: string
+  approvedAt: string | null
+}
+
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string }
 
 /** Funções que a interface pode chamar no processo principal. */
@@ -58,6 +67,10 @@ export interface AppApi {
   /** Descarta a Bíblia importada e volta para a embutida. */
   useEmbeddedBible(): Promise<Result<Settings>>
   getEntry(day: number): Promise<Entry | null>
+  /** Estado de cada dia que já tem textos, no intervalo dado (inclusive). */
+  getStatuses(fromDay: number, toDay: number): Promise<Record<number, EntryStatus>>
+  /** Dias com textos, do mais recente ao mais antigo, filtrados por busca e estado. */
+  searchEntries(query: string, status: EntryStatus | 'all'): Promise<EntrySummary[]>
   /** Gera (ou gera de novo) os quatro textos do dia e salva como rascunho. */
   generate(day: number): Promise<Result<Entry>>
   /** Reescreve só um dos quatro textos de um rascunho. */
