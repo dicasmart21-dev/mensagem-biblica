@@ -470,3 +470,26 @@ textarea.body:focus {
   font-size: 13px;
   padding: 4px 10px;
 }
+
+.monthly {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 16px 0 12px;
+  padding: 14px 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 14px;
+}
+
+.monthly > div:first-child {
+  flex: 1;
+  min-width: 260px;
+}
+
+.monthly .hint {
+  margin-top: 4px;
+}

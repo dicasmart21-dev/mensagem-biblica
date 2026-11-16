@@ -29,6 +29,8 @@ export function Calendar({ settings, month, onMonthChange, onOpenDay }: Props) {
   const first = cells.find((c) => c.day !== null)?.day ?? null
   const last = cells.at(-1)!.day
 
+  const [reload, setReload] = useState(0)
+  const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [statuses, setStatuses] = useState<Record<number, EntryStatus>>({})
   useEffect(() => {
     setStatuses({})
@@ -40,7 +42,38 @@ export function Calendar({ settings, month, onMonthChange, onOpenDay }: Props) {
     return () => {
       current = false
     }
-  }, [first, last])
+  }, [first, last, reload])
+
+  async function exportRequest() {
+    const outcome = await window.api.exportMonthlyRequest(month)
+    if (!outcome) return
+    setMessage(
+      outcome.ok
+        ? {
+            kind: 'ok',
+            text: `Pedido com ${outcome.value.count} ${outcome.value.count === 1 ? 'dia' : 'dias'} salvo em ${outcome.value.path}. Envie esse arquivo ao Claude no chat (com a skill Palavra Diária) e depois importe aqui o arquivo de textos que ele devolver.`
+          }
+        : { kind: 'error', text: outcome.error }
+    )
+  }
+
+  async function importTexts() {
+    const outcome = await window.api.importTexts()
+    if (!outcome) return
+    if (!outcome.ok) return setMessage({ kind: 'error', text: `Nada foi importado. ${outcome.error}` })
+    const { imported, skipped, withIssues } = outcome.value
+    setReload((n) => n + 1)
+    setMessage({
+      kind: 'ok',
+      text: [
+        `${imported} ${imported === 1 ? 'dia importado' : 'dias importados'} como rascunho.`,
+        skipped > 0 ? `${skipped} já ${skipped === 1 ? 'tinha' : 'tinham'} textos e não ${skipped === 1 ? 'foi alterado' : 'foram alterados'}.` : '',
+        withIssues > 0 ? `${withIssues} com aviso de tamanho; abra o dia para ver.` : ''
+      ]
+        .filter(Boolean)
+        .join(' ')
+    })
+  }
 
   function shift(delta: number) {
     const moved = new Date(Date.UTC(year, monthIndex + delta, 1))
@@ -87,6 +120,20 @@ export function Calendar({ settings, month, onMonthChange, onOpenDay }: Props) {
           )
         })}
       </div>
+      <div className="monthly">
+        <div>
+          <strong>Gerar o mês pelo chat</strong>
+          <p className="hint">
+            Sem custo de API: salve o pedido deste mês (só os dias ainda sem textos), envie ao Claude no chat e importe
+            o arquivo que ele devolver.
+          </p>
+        </div>
+        <div className="row">
+          <button onClick={() => void exportRequest()}>Salvar pedido…</button>
+          <button onClick={() => void importTexts()}>Importar textos…</button>
+        </div>
+      </div>
+      {message ? <p className={message.kind === 'ok' ? 'saved' : 'error'}>{message.text}</p> : null}
       <p className="hint">Clique em um dia para ver, gerar ou editar os textos, inclusive de dias futuros.</p>
     </section>
   )

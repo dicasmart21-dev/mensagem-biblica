@@ -64,6 +64,10 @@ export interface AppApi {
   setApiKey(apiKey: string): Promise<Result<Settings>>
   /** Exporta os dias do filtro para CSV ou JSON, em um arquivo escolhido pelo usuário. `null` se cancelar. */
   exportEntries(query: string, status: EntryStatus | 'all'): Promise<Result<{ path: string; count: number }> | null>
+  /** Exporta o pedido do mês ("AAAA-MM") para gerar os textos no chat. `null` se cancelar. */
+  exportMonthlyRequest(month: string): Promise<Result<{ path: string; count: number }> | null>
+  /** Importa o arquivo de textos devolvido pela skill do chat. `null` se cancelar. */
+  importTexts(): Promise<Result<{ imported: number; skipped: number; withIssues: number }> | null>
   /** Abre o seletor de arquivo e importa uma Bíblia em JSON. `null` se o usuário cancelar. */
   importBible(): Promise<Result<Settings> | null>
   /** Descarta a Bíblia importada e volta para a embutida. */

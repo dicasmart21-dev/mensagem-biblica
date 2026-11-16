@@ -126,6 +126,38 @@ export function setStatus(day: number, status: EntryStatus): Entry {
   return getEntry(day)!
 }
 
+/** Frases de impacto já gravadas, da mais recente para a mais antiga. */
+export function recentImpacts(limit: number): string[] {
+  const rows = open().prepare('SELECT impact FROM entries ORDER BY day DESC LIMIT ?').all(limit) as Row[]
+  return rows.map((r) => r.impact as string)
+}
+
+/** Modelo registrado nos textos que vieram do chat, e não da API. */
+export const CHAT_MODEL = 'chat'
+
+/**
+ * Grava como rascunho os dias vindos do chat. Dias que já têm textos são pulados,
+ * para uma importação nunca apagar o que já foi gerado, editado ou aprovado.
+ */
+export function saveImported(days: { day: number; texts: Texts }[]): { imported: number; skipped: number } {
+  const database = open()
+  let imported = 0
+  database.exec('BEGIN')
+  try {
+    for (const { day, texts } of days) {
+      if (getEntry(day)) continue
+      const ref = referenceForDay(day)
+      saveGenerated(day, ref.book.id, ref.chapter, texts, CHAT_MODEL)
+      imported++
+    }
+    database.exec('COMMIT')
+  } catch (error) {
+    database.exec('ROLLBACK')
+    throw error
+  }
+  return { imported, skipped: days.length - imported }
+}
+
 export function closeDb(): void {
   db?.close()
   db = null

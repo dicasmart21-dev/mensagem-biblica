@@ -160,7 +160,11 @@ export function DayView({ settings, day: chosen, onOpenSettings, onOpenDay, onBa
   const approved = entry?.status === 'approved'
   const issues = texts ? findIssues(texts) : []
   const blockers = texts ? approvalBlockers(texts) : []
-  const modelName = entry ? (MODELS.find((m) => m.id === entry.model)?.name ?? entry.model).replace(/ \(.*\)$/, '') : ''
+  const modelName = !entry
+    ? ''
+    : entry.model === 'chat'
+      ? 'o Claude no chat'
+      : (MODELS.find((m) => m.id === entry.model)?.name ?? entry.model).replace(/ \(.*\)$/, '')
 
   return (
     <>

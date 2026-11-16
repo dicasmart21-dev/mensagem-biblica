@@ -43,3 +43,15 @@ na primeira execução.
 - A chave da API é gravada cifrada pelo cofre de senhas do sistema operacional.
 - Texto bíblico embutido: Bíblia Livre (`resources/biblia`, gerado por `scripts/build-bible.mjs`). Outra tradução pode
   ser importada em Configurações a partir de um arquivo JSON.
+
+## Gerar o mês pelo chat (sem custo de API)
+
+1. No app, aba **Calendário**, vá ao mês desejado e clique em **Salvar pedido…**. O arquivo `pedido-AAAA-MM.json`
+   traz só os dias que ainda não têm textos, o texto dos capítulos, as instruções de estilo e as frases já usadas.
+2. No chat do Claude, com a skill `palavra-diaria-mensal` instalada (`skill/palavra-diaria-mensal.skill`), anexe o
+   pedido e peça para gerar os textos do mês.
+3. Baixe o `textos-AAAA-MM.json` que o Claude devolver e, no app, clique em **Importar textos…**. Os dias entram
+   como rascunho; dias que já tinham textos não são alterados.
+
+As instruções de estilo têm uma única fonte (`src/shared/prompt.ts`) e viajam dentro do pedido, então a API e o
+chat escrevem com as mesmas regras.

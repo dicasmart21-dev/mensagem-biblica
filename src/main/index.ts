@@ -1,12 +1,24 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, statSync, writeFileSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import { TEXT_FIELDS, type EntryStatus, type Result, type TextField, type Texts } from '../shared/api'
 import { toCsv, toRows } from '../shared/export'
+import { buildRequest, daysOfMonth, parseTextsFile } from '../shared/monthly'
 import { todayIso } from '../shared/rotation'
+import { findIssues } from '../shared/validate'
 import { approvalBlockers } from '../shared/validate'
-import { importBibleFile, removeImportedBible } from './bible'
-import { closeDb, findEntries, getEntry, getStatuses, searchEntries, setStatus, updateTexts } from './db'
+import { chapterText, importBibleFile, removeImportedBible } from './bible'
+import {
+  closeDb,
+  findEntries,
+  getEntry,
+  getStatuses,
+  recentImpacts,
+  saveImported,
+  searchEntries,
+  setStatus,
+  updateTexts
+} from './db'
 import { generateForDay, regenerateText } from './generate'
 import { getSettings, setApiKey, setModel, setStartDate } from './settings'
 
@@ -109,6 +121,55 @@ void app.whenReady().then(() => {
       const json = extname(path).toLowerCase() === '.json'
       writeFileSync(path, json ? JSON.stringify(rows, null, 2) : toCsv(rows))
       return { path, count: rows.length }
+    })
+  })
+  ipcMain.handle('monthly:exportRequest', async (event, value: unknown) => {
+    const month = String(value)
+    const win = BrowserWindow.fromWebContents(event.sender)!
+    const picked = await dialog.showSaveDialog(win, {
+      title: 'Salvar pedido para o chat',
+      defaultPath: join(app.getPath('documents'), `pedido-${month}.json`),
+      filters: [{ name: 'Pedido do Palavra Diária', extensions: ['json'] }]
+    })
+    if (picked.canceled || !picked.filePath) return null
+    const path = picked.filePath
+    return result(() => {
+      const settings = getSettings()
+      const days = daysOfMonth(settings.startDate, month).filter((day) => !getEntry(day))
+      if (days.length === 0) throw new Error('Todos os dias deste mês já têm textos; não há o que pedir.')
+      const request = buildRequest({
+        month,
+        startDate: settings.startDate,
+        translation: settings.bible.name,
+        days,
+        chapterText,
+        previousImpacts: recentImpacts(400)
+      })
+      writeFileSync(path, JSON.stringify(request, null, 2))
+      return { path, count: days.length }
+    })
+  })
+  ipcMain.handle('monthly:importTexts', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)!
+    const picked = await dialog.showOpenDialog(win, {
+      title: 'Importar textos gerados no chat',
+      properties: ['openFile'],
+      filters: [{ name: 'Textos do Palavra Diária', extensions: ['json'] }]
+    })
+    if (picked.canceled || !picked.filePaths[0]) return null
+    const path = picked.filePaths[0]
+    return result(() => {
+      if (statSync(path).size > 20 * 1024 * 1024) throw new Error('O arquivo é grande demais para ser um arquivo de textos.')
+      let json: unknown
+      try {
+        json = JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''))
+      } catch {
+        throw new Error('O arquivo não é um JSON válido.')
+      }
+      const days = parseTextsFile(json)
+      const saved = saveImported(days)
+      const withIssues = days.filter((d) => findIssues(d.texts).length > 0).length
+      return { ...saved, withIssues }
     })
   })
   ipcMain.handle('bible:import', async (event) => {
