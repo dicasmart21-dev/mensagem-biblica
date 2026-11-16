@@ -53,6 +53,16 @@ const toTexts = (o: Parsed): Texts => ({
 /** Erro com mensagem pronta para mostrar na tela. */
 export class GenerationError extends Error {}
 
+/** Código ou mensagem da causa mais interna de um erro de rede (ex.: ECONNRESET, ENOTFOUND). */
+function causeOf(error: unknown): string {
+  let detail = ''
+  for (let e: unknown = error, depth = 0; e instanceof Error && depth < 5; e = e.cause, depth++) {
+    const code = (e as NodeJS.ErrnoException).code
+    if (e !== error) detail = code ?? e.message
+  }
+  return detail.slice(0, 120)
+}
+
 function explain(error: unknown): GenerationError {
   if (error instanceof GenerationError) return error
   if (error instanceof Anthropic.AuthenticationError) {
@@ -67,8 +77,14 @@ function explain(error: unknown): GenerationError {
   if (error instanceof Anthropic.RateLimitError) {
     return new GenerationError('Limite de uso da API atingido. Tente de novo em alguns minutos.')
   }
+  if (error instanceof Anthropic.APIConnectionTimeoutError) {
+    return new GenerationError('A API do Claude demorou demais para responder. Tente de novo.')
+  }
   if (error instanceof Anthropic.APIConnectionError) {
-    return new GenerationError('Não foi possível conectar à API do Claude. Verifique sua internet.')
+    const detail = causeOf(error)
+    return new GenerationError(
+      `A conexão com a API do Claude falhou${detail ? ` (${detail})` : ''}. Verifique a internet e tente de novo.`
+    )
   }
   if (error instanceof Anthropic.APIError) {
     return new GenerationError(`A API do Claude devolveu um erro (${error.status ?? 'sem código'}): ${error.message}`)
@@ -86,17 +102,21 @@ async function ask<S extends z.ZodType>(
   messages: Messages,
   schema: S
 ): Promise<{ output: z.infer<S>; content: Anthropic.Beta.BetaContentBlock[] }> {
-  const response = await client.beta.messages.parse({
-    model,
-    max_tokens: 16000,
-    system: system(translation),
-    messages,
-    output_config: { effort: 'high', format: betaZodOutputFormat(schema) },
-    // Se o modelo recusar por engano de um filtro de segurança, a API tenta
-    // sozinha em um modelo substituto em vez de devolver uma recusa.
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default'
-  })
+  // Em streaming, os dados chegam aos poucos: uma resposta longa não deixa a conexão
+  // parada por minutos, o que redes e antivírus costumam derrubar.
+  const response = await client.beta.messages
+    .stream({
+      model,
+      max_tokens: 32000,
+      system: system(translation),
+      messages,
+      output_config: { effort: 'high', format: betaZodOutputFormat(schema) },
+      // Se o modelo recusar por engano de um filtro de segurança, a API tenta
+      // sozinha em um modelo substituto em vez de devolver uma recusa.
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default'
+    })
+    .finalMessage()
   if (response.stop_reason === 'refusal') {
     throw new GenerationError('O modelo se recusou a gerar os textos deste capítulo. Tente de novo.')
   }
