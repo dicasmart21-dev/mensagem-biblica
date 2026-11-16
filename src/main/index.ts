@@ -1,8 +1,10 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
-import type { Result } from '../shared/api'
-import { closeDb, getEntry } from './db'
-import { generateForDay } from './generate'
+import { TEXT_FIELDS, type Result, type TextField, type Texts } from '../shared/api'
+import { approvalBlockers } from '../shared/validate'
+import { importBibleFile, removeImportedBible } from './bible'
+import { closeDb, getEntry, setStatus, updateTexts } from './db'
+import { generateForDay, regenerateText } from './generate'
 import { getSettings, setApiKey, setModel, setStartDate } from './settings'
 
 function createWindow(): void {
@@ -52,8 +54,29 @@ function asDay(value: unknown): number {
   return value
 }
 
+function asTexts(value: unknown): Texts {
+  const v = value as Record<string, unknown> | null
+  if (!v || TEXT_FIELDS.some((f) => typeof v[f] !== 'string')) throw new Error('Textos inválidos.')
+  return { impact: v.impact, xPost: v.xPost, instagram: v.instagram, reflection: v.reflection } as Texts
+}
+
+function asField(value: unknown): TextField {
+  if (!TEXT_FIELDS.includes(value as TextField)) throw new Error('Texto desconhecido.')
+  return value as TextField
+}
+
 /** Dias com geração em andamento, para não disparar duas chamadas para o mesmo dia. */
 const generating = new Set<number>()
+
+async function exclusive<T>(day: number, action: () => Promise<T>): Promise<T> {
+  if (generating.has(day)) throw new Error('Os textos deste dia já estão sendo gerados.')
+  generating.add(day)
+  try {
+    return await action()
+  } finally {
+    generating.delete(day)
+  }
+}
 
 void app.whenReady().then(() => {
   ipcMain.handle('settings:get', () => getSettings())
@@ -61,18 +84,46 @@ void app.whenReady().then(() => {
   ipcMain.handle('settings:setModel', (_e, v: unknown) => result(() => setModel(String(v))))
   ipcMain.handle('settings:setApiKey', (_e, v: unknown) => result(() => setApiKey(String(v))))
   ipcMain.handle('entries:get', (_e, day: unknown) => getEntry(asDay(day)))
+  ipcMain.handle('bible:import', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)!
+    const picked = await dialog.showOpenDialog(win, {
+      title: 'Importar Bíblia',
+      properties: ['openFile'],
+      filters: [{ name: 'Bíblia em JSON', extensions: ['json'] }]
+    })
+    if (picked.canceled || !picked.filePaths[0]) return null
+    return result(() => importBibleFile(picked.filePaths[0]))
+  })
+  ipcMain.handle('bible:useEmbedded', () => result(removeImportedBible))
   ipcMain.handle('entries:generate', (_e, value: unknown) =>
-    result(async () => {
+    result(() => {
       const day = asDay(value)
-      if (generating.has(day)) throw new Error('Os textos deste dia já estão sendo gerados.')
-      generating.add(day)
-      try {
-        return await generateForDay(day)
-      } finally {
-        generating.delete(day)
-      }
+      if (getEntry(day)?.status === 'approved') throw new Error('Este dia já foi aprovado. Reabra para gerar de novo.')
+      return exclusive(day, () => generateForDay(day))
     })
   )
+  ipcMain.handle('entries:regenerateText', (_e, value: unknown, field: unknown) =>
+    result(() => {
+      const day = asDay(value)
+      const which = asField(field)
+      return exclusive(day, () => regenerateText(day, which))
+    })
+  )
+  ipcMain.handle('entries:saveTexts', (_e, day: unknown, texts: unknown) =>
+    result(() => updateTexts(asDay(day), asTexts(texts)))
+  )
+  ipcMain.handle('entries:approve', (_e, value: unknown) =>
+    result(() => {
+      const day = asDay(value)
+      const entry = getEntry(day)
+      if (!entry) throw new Error('Ainda não há textos para este dia.')
+      const blockers = approvalBlockers(entry.texts)
+      if (blockers.length > 0) throw new Error(`Não dá para aprovar ainda: ${blockers.join(' ')}`)
+      return setStatus(day, 'approved')
+    })
+  )
+  ipcMain.handle('entries:reopen', (_e, day: unknown) => result(() => setStatus(asDay(day), 'draft')))
+  ipcMain.handle('clipboard:write', (_e, text: unknown) => clipboard.writeText(String(text)))
 
   createWindow()
   app.on('activate', () => {

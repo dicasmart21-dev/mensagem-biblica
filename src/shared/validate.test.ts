@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { countWords, findIssues, xLength } from './validate'
+import { approvalBlockers, countWords, findIssues, xLength } from './validate'
 
 const words = (n: number): string => Array.from({ length: n }, () => 'graça').join(' ')
 const ok = { impact: 'Frase.', xPost: 'Post.', instagram: 'Legenda.', reflection: words(500) }
@@ -40,5 +40,13 @@ describe('findIssues', () => {
       'A frase de impacto está vazia.',
       'O post para o X está vazio.'
     ])
+  })
+})
+
+describe('approvalBlockers', () => {
+  it('bloqueia texto vazio e post longo, mas não reflexão fora do tamanho', () => {
+    expect(approvalBlockers({ ...ok, reflection: words(350) })).toEqual([])
+    expect(approvalBlockers({ ...ok, xPost: 'a'.repeat(281) })).toHaveLength(1)
+    expect(approvalBlockers({ ...ok, instagram: '' })).toEqual(['A legenda do Instagram está vazia.'])
   })
 })

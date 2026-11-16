@@ -10,7 +10,12 @@ interface Stored {
   model: ModelId
   /** Chave da API cifrada pelo cofre do sistema operacional, em base64. */
   apiKeyEnc?: string
+  /** Nome da Bíblia importada em uso; ausente quando vale a embutida. */
+  importedBible?: string
 }
+
+/** Nome da tradução embutida no app. */
+export const EMBEDDED_BIBLE = 'Bíblia Livre'
 
 const file = (): string => join(app.getPath('userData'), 'settings.json')
 
@@ -45,7 +50,8 @@ function load(): Stored {
     return {
       startDate: parsed.startDate,
       model: isModel(parsed.model) ? parsed.model : DEFAULT_MODEL,
-      ...(typeof parsed.apiKeyEnc === 'string' ? { apiKeyEnc: parsed.apiKeyEnc } : {})
+      ...(typeof parsed.apiKeyEnc === 'string' ? { apiKeyEnc: parsed.apiKeyEnc } : {}),
+      ...(typeof parsed.importedBible === 'string' ? { importedBible: parsed.importedBible } : {})
     }
   }
   return save({ startDate: todayIso(), model: DEFAULT_MODEL })
@@ -67,7 +73,10 @@ export function getApiKey(): string | null {
 const toPublic = (stored: Stored): Settings => ({
   startDate: stored.startDate,
   model: stored.model,
-  hasApiKey: getApiKey() !== null
+  hasApiKey: getApiKey() !== null,
+  bible: stored.importedBible
+    ? { source: 'imported', name: stored.importedBible }
+    : { source: 'embedded', name: EMBEDDED_BIBLE }
 })
 
 export const getSettings = (): Settings => toPublic(load())
@@ -92,4 +101,10 @@ export function setApiKey(apiKey: string): Settings {
     )
   }
   return toPublic(save({ ...rest, apiKeyEnc: safeStorage.encryptString(trimmed).toString('base64') }))
+}
+
+/** Passa a usar a Bíblia importada com este nome; `null` volta para a embutida. */
+export function setImportedBible(name: string | null): Settings {
+  const { importedBible: _removed, ...rest } = load()
+  return toPublic(save(name ? { ...rest, importedBible: name } : rest))
 }

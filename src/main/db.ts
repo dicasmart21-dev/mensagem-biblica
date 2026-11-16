@@ -78,6 +78,26 @@ export function saveGenerated(
   return getEntry(day)!
 }
 
+/** Salva edições em um rascunho. Dias aprovados precisam ser reabertos antes. */
+export function updateTexts(day: number, texts: Texts): Entry {
+  const entry = getEntry(day)
+  if (!entry) throw new Error('Ainda não há textos para este dia.')
+  if (entry.status !== 'draft') throw new Error('Este dia já foi aprovado. Reabra para editar.')
+  open()
+    .prepare('UPDATE entries SET impact = ?, x_post = ?, instagram = ?, reflection = ?, updated_at = ? WHERE day = ?')
+    .run(texts.impact, texts.xPost, texts.instagram, texts.reflection, new Date().toISOString(), day)
+  return getEntry(day)!
+}
+
+export function setStatus(day: number, status: EntryStatus): Entry {
+  if (!getEntry(day)) throw new Error('Ainda não há textos para este dia.')
+  const now = new Date().toISOString()
+  open()
+    .prepare('UPDATE entries SET status = ?, approved_at = ?, updated_at = ? WHERE day = ?')
+    .run(status, status === 'approved' ? now : null, now, day)
+  return getEntry(day)!
+}
+
 export function closeDb(): void {
   db?.close()
   db = null

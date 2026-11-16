@@ -41,3 +41,8 @@ export function findIssues(texts: Texts): string[] {
   }
   return issues
 }
+
+/** O que impede a aprovação: texto vazio ou post que o X não aceitaria. */
+export function approvalBlockers(texts: Texts): string[] {
+  return findIssues(texts).filter((issue) => !issue.startsWith('A reflexão tem'))
+}

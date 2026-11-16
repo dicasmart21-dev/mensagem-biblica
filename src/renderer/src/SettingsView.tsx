@@ -25,6 +25,17 @@ export function SettingsView({ settings, onChange }: Props) {
     if (await apply(window.api.setApiKey(apiKey), 'Chave salva.')) setApiKey('')
   }
 
+  async function importBible() {
+    const outcome = await window.api.importBible()
+    if (!outcome) return
+    if (outcome.ok) {
+      onChange(outcome.value)
+      setMessage({ kind: 'ok', text: `Bíblia importada: ${outcome.value.bible.name}.` })
+    } else {
+      setMessage({ kind: 'error', text: outcome.error })
+    }
+  }
+
   return (
     <section className="card settings">
       <div className="field">
@@ -70,6 +81,23 @@ export function SettingsView({ settings, onChange }: Props) {
       </div>
 
       <div className="field">
+        <label>Texto bíblico</label>
+        <p className="hint">
+          Em uso: <strong>{settings.bible.name}</strong>
+          {settings.bible.source === 'embedded' ? ' (embutida no app)' : ' (importada por você)'}. Você pode importar
+          outra tradução a partir de um arquivo JSON que tenha o direito de usar; ele fica só neste computador.
+        </p>
+        <div className="row">
+          <button onClick={() => void importBible()}>Importar Bíblia…</button>
+          {settings.bible.source === 'imported' ? (
+            <button onClick={() => void apply(window.api.useEmbeddedBible(), 'De volta à Bíblia Livre.')}>
+              Voltar para a Bíblia Livre
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="field">
         <label htmlFor="startDate">Data do dia 1 (Gênesis 1)</label>
         <p className="hint">Mudar a data desloca o calendário; os textos já gerados continuam ligados ao seu capítulo.</p>
         <input
@@ -85,7 +113,7 @@ export function SettingsView({ settings, onChange }: Props) {
       {message ? <p className={message.kind === 'ok' ? 'saved' : 'error'}>{message.text}</p> : null}
 
       <p className="credits">
-        Texto bíblico: Bíblia Livre, baseada na tradução de João Ferreira de Almeida (1819), usada sob licença
+        Texto bíblico embutido: Bíblia Livre, baseada na tradução de João Ferreira de Almeida (1819), usada sob licença
         Creative Commons Atribuição 3.0 Brasil.
       </p>
     </section>

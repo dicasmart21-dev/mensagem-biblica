@@ -13,6 +13,8 @@ export interface Settings {
   startDate: string
   model: ModelId
   hasApiKey: boolean
+  /** Tradução usada na geração: a embutida ou uma importada pelo usuário. */
+  bible: { source: 'embedded' | 'imported'; name: string }
 }
 
 /** Os quatro textos gerados para um dia. */
@@ -22,6 +24,10 @@ export interface Texts {
   instagram: string
   reflection: string
 }
+
+export type TextField = keyof Texts
+
+export const TEXT_FIELDS: readonly TextField[] = ['impact', 'xPost', 'instagram', 'reflection']
 
 export type EntryStatus = 'draft' | 'approved'
 
@@ -47,9 +53,21 @@ export interface AppApi {
   setModel(model: ModelId): Promise<Result<Settings>>
   /** Salva a chave cifrada no cofre do sistema; string vazia apaga a chave. */
   setApiKey(apiKey: string): Promise<Result<Settings>>
+  /** Abre o seletor de arquivo e importa uma Bíblia em JSON. `null` se o usuário cancelar. */
+  importBible(): Promise<Result<Settings> | null>
+  /** Descarta a Bíblia importada e volta para a embutida. */
+  useEmbeddedBible(): Promise<Result<Settings>>
   getEntry(day: number): Promise<Entry | null>
   /** Gera (ou gera de novo) os quatro textos do dia e salva como rascunho. */
   generate(day: number): Promise<Result<Entry>>
+  /** Reescreve só um dos quatro textos de um rascunho. */
+  regenerateText(day: number, field: TextField): Promise<Result<Entry>>
+  /** Salva edições manuais em um rascunho. */
+  saveTexts(day: number, texts: Texts): Promise<Result<Entry>>
+  approve(day: number): Promise<Result<Entry>>
+  /** Devolve um dia aprovado para rascunho, para poder editar de novo. */
+  reopen(day: number): Promise<Result<Entry>>
+  copyText(text: string): Promise<void>
 }
 
 declare global {

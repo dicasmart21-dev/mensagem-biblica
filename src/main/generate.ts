@@ -1,11 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod'
 import { z } from 'zod'
-import type { Entry, Texts } from '../shared/api'
+import type { Entry, TextField, Texts } from '../shared/api'
 import { referenceForDay } from '../shared/rotation'
 import { REFLECTION_MAX, REFLECTION_MIN, X_MAX, findIssues } from '../shared/validate'
-import { TRANSLATION, chapterText } from './bible'
-import { saveGenerated } from './db'
+import { chapterText } from './bible'
+import { getEntry, saveGenerated, updateTexts } from './db'
 import { getApiKey, getSettings } from './settings'
 
 const Output = z.object({
@@ -15,7 +15,7 @@ const Output = z.object({
   reflexao: z.string()
 })
 
-const SYSTEM = `Você escreve mensagens bíblicas diárias em português do Brasil. Elas são publicadas no X, no Instagram e num blog, para um público cristão amplo: gente de igreja e gente que só esbarrou no post. A cada dia você recebe um capítulo da Bíblia e escreve quatro textos sobre ele. Uma pessoa revisa e aprova tudo antes de publicar.
+const system = (translation: string): string => `Você escreve mensagens bíblicas diárias em português do Brasil. Elas são publicadas no X, no Instagram e num blog, para um público cristão amplo: gente de igreja e gente que só esbarrou no post. A cada dia você recebe um capítulo da Bíblia e escreve quatro textos sobre ele. Uma pessoa revisa e aprova tudo antes de publicar.
 
 # Lente teológica: luterana confessional
 
@@ -26,7 +26,7 @@ const SYSTEM = `Você escreve mensagens bíblicas diárias em português do Bras
 
 # Fidelidade ao texto
 
-Baseie-se no capítulo fornecido. Citações bíblicas são literais, copiadas do texto fornecido (tradução ${TRANSLATION}), com o número do versículo. Ao citar outro livro da Bíblia, dê a referência e parafraseie em vez de citar de memória entre aspas. Não atribua frases a Lutero nem às Confissões Luteranas.
+Baseie-se no capítulo fornecido. Citações bíblicas são literais, copiadas do texto fornecido (tradução ${translation}), com o número do versículo. Ao citar outro livro da Bíblia, dê a referência e parafraseie em vez de citar de memória entre aspas. Não atribua frases a Lutero nem às Confissões Luteranas.
 
 # Tom
 
@@ -76,61 +76,119 @@ function explain(error: unknown): GenerationError {
   return new GenerationError(error instanceof Error ? error.message : String(error))
 }
 
+type Messages = Anthropic.Beta.BetaMessageParam[]
+
+/** Uma chamada ao Claude com saída estruturada; devolve o objeto validado e o conteúdo bruto. */
+async function ask<S extends z.ZodType>(
+  client: Anthropic,
+  model: string,
+  translation: string,
+  messages: Messages,
+  schema: S
+): Promise<{ output: z.infer<S>; content: Anthropic.Beta.BetaContentBlock[] }> {
+  const response = await client.beta.messages.parse({
+    model,
+    max_tokens: 16000,
+    system: system(translation),
+    messages,
+    output_config: { effort: 'high', format: betaZodOutputFormat(schema) },
+    // Se o modelo recusar por engano de um filtro de segurança, a API tenta
+    // sozinha em um modelo substituto em vez de devolver uma recusa.
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default'
+  })
+  if (response.stop_reason === 'refusal') {
+    throw new GenerationError('O modelo se recusou a gerar os textos deste capítulo. Tente de novo.')
+  }
+  if (response.stop_reason === 'max_tokens' || !response.parsed_output) {
+    throw new GenerationError('A resposta do modelo veio incompleta. Tente de novo.')
+  }
+  return { output: response.parsed_output as z.infer<S>, content: response.content }
+}
+
+function setup(day: number) {
+  const apiKey = getApiKey()
+  if (!apiKey) throw new GenerationError('Informe a chave da API do Claude nas Configurações.')
+  const settings = getSettings()
+  const ref = referenceForDay(day)
+  const chapter = `Capítulo de hoje: ${ref.label}\n\n<capitulo>\n${chapterText(ref.book.id, ref.chapter)}\n</capitulo>`
+  return { client: new Anthropic({ apiKey }), model: settings.model, translation: settings.bible.name, ref, chapter }
+}
+
+const correction = (issues: string[], what: string): string =>
+  `A verificação automática encontrou estes problemas:\n${issues.map((i) => `- ${i}`).join('\n')}\n\nReescreva ${what}, corrigindo esses pontos e mantendo o restante.`
+
 /**
  * Gera os quatro textos do dia com o Claude e salva como rascunho.
  * Se a primeira resposta sair dos limites de tamanho, pede uma correção uma vez;
  * se ainda assim sobrar algum problema, salva mesmo assim (a tela mostra o aviso).
  */
 export async function generateForDay(day: number): Promise<Entry> {
-  const apiKey = getApiKey()
-  if (!apiKey) throw new GenerationError('Informe a chave da API do Claude nas Configurações.')
-
-  const { model } = getSettings()
-  const ref = referenceForDay(day)
-  const client = new Anthropic({ apiKey })
-
-  const messages: Anthropic.Beta.BetaMessageParam[] = [
-    {
-      role: 'user',
-      content: `Capítulo de hoje: ${ref.label}\n\n<capitulo>\n${chapterText(ref.book.id, ref.chapter)}\n</capitulo>\n\nEscreva os quatro textos para este capítulo.`
-    }
-  ]
-
   try {
+    const { client, model, translation, ref, chapter } = setup(day)
+    const messages: Messages = [
+      { role: 'user', content: `${chapter}\n\nEscreva os quatro textos para este capítulo.` }
+    ]
     let texts: Texts | null = null
     for (let attempt = 1; attempt <= 2; attempt++) {
-      const response = await client.beta.messages.parse({
-        model,
-        max_tokens: 16000,
-        system: SYSTEM,
-        messages,
-        output_config: { effort: 'high', format: betaZodOutputFormat(Output) },
-        // Se o modelo recusar por engano de um filtro de segurança, a API tenta
-        // sozinha em um modelo substituto em vez de devolver uma recusa.
-        betas: ['server-side-fallback-2026-07-01'],
-        fallbacks: 'default'
-      })
-
-      if (response.stop_reason === 'refusal') {
-        throw new GenerationError('O modelo se recusou a gerar os textos deste capítulo. Tente de novo.')
-      }
-      if (response.stop_reason === 'max_tokens' || !response.parsed_output) {
-        throw new GenerationError('A resposta do modelo veio incompleta. Tente de novo.')
-      }
-
-      texts = toTexts(response.parsed_output)
+      const { output, content } = await ask(client, model, translation, messages, Output)
+      texts = toTexts(output)
       const issues = findIssues(texts)
       if (issues.length === 0 || attempt === 2) break
-
       messages.push(
-        { role: 'assistant', content: response.content },
-        {
-          role: 'user',
-          content: `A verificação automática encontrou estes problemas:\n${issues.map((i) => `- ${i}`).join('\n')}\n\nReescreva os quatro textos, corrigindo esses pontos e mantendo o restante.`
-        }
+        { role: 'assistant', content },
+        { role: 'user', content: correction(issues, 'os quatro textos') }
       )
     }
     return saveGenerated(day, ref.book.id, ref.chapter, texts!, model)
+  } catch (error) {
+    throw explain(error)
+  }
+}
+
+const One = z.object({ texto: z.string() })
+
+const FIELD_NAMES: Record<TextField, string> = {
+  impact: 'a frase de impacto (frase_impacto)',
+  xPost: 'o post para o X (post_x)',
+  instagram: 'a legenda do Instagram (legenda_instagram)',
+  reflection: 'a reflexão (reflexao)'
+}
+
+/** Reescreve só um dos quatro textos de um rascunho, mantendo os outros três como estão. */
+export async function regenerateText(day: number, field: TextField): Promise<Entry> {
+  try {
+    const entry = getEntry(day)
+    if (!entry) throw new GenerationError('Ainda não há textos para este dia.')
+    if (entry.status !== 'draft') throw new GenerationError('Este dia já foi aprovado. Reabra para editar.')
+
+    const { client, model, translation, chapter } = setup(day)
+    const current = JSON.stringify(
+      {
+        frase_impacto: entry.texts.impact,
+        post_x: entry.texts.xPost,
+        legenda_instagram: entry.texts.instagram,
+        reflexao: entry.texts.reflection
+      },
+      null,
+      2
+    )
+    const messages: Messages = [
+      {
+        role: 'user',
+        content: `${chapter}\n\nEstes são os quatro textos atuais deste capítulo:\n\n<textos_atuais>\n${current}\n</textos_atuais>\n\nQuem revisa não ficou satisfeito com ${FIELD_NAMES[field]}. Escreva uma nova versão só desse texto, com outro ângulo ou outra abertura, seguindo as mesmas regras e combinando com os outros três, que ficam como estão. Devolva apenas o novo texto.`
+      }
+    ]
+    let texts = entry.texts
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const { output, content } = await ask(client, model, translation, messages, One)
+      texts = { ...entry.texts, [field]: output.texto.trim() }
+      const before = findIssues(entry.texts)
+      const issues = findIssues(texts).filter((issue) => !before.includes(issue))
+      if (issues.length === 0 || attempt === 2) break
+      messages.push({ role: 'assistant', content }, { role: 'user', content: correction(issues, 'esse texto') })
+    }
+    return updateTexts(day, texts)
   } catch (error) {
     throw explain(error)
   }
