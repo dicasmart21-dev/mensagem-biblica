@@ -1,0 +1,40 @@
+name: Instalador do Windows
+
+# Roda só quando alguém clica em "Run workflow" na aba Actions.
+on: workflow_dispatch
+
+permissions:
+  contents: write
+
+jobs:
+  instalador:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # npm install (e não npm ci): o package-lock foi gerado em Linux e pode não
+      # listar os binários opcionais que as ferramentas de build usam no Windows.
+      - run: npm install
+
+      - run: npm test
+
+      - run: npm run dist:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Publicar o instalador em um Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="v$(node -p "require('./package.json').version")"
+          if ! gh release view "$version" >/dev/null 2>&1; then
+            gh release create "$version" --target "$GITHUB_SHA" \
+              --title "Palavra Diária ${version#v}" \
+              --notes 'Instalador para Windows (64 bits). Não é assinado: no aviso do SmartScreen, clique em "Mais informações" e depois em "Executar assim mesmo".'
+          fi
+          gh release upload "$version" dist/*.exe --clobber

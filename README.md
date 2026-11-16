@@ -30,6 +30,9 @@ npm install
 npm run dist:win
 ```
 
+Sem instalar nada: na aba **Actions** do repositório no GitHub, abra "Instalador do Windows" e clique em
+**Run workflow**; o instalador aparece em **Releases** alguns minutos depois.
+
 O instalador sai em `dist/Palavra-Diaria-Setup-<versão>.exe`. Em Linux o mesmo comando funciona se o Wine
 (64 e 32 bits) estiver instalado. O instalador não é assinado, então o Windows mostra o aviso do SmartScreen
 na primeira execução.
