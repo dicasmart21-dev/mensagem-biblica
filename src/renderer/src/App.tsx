@@ -50,7 +50,14 @@ export function App() {
       </header>
 
       {tab === 'today' ? (
-        <DayView settings={settings} onOpenSettings={() => go('settings')} />
+        <DayView
+          settings={settings}
+          onOpenSettings={() => go('settings')}
+          onOpenDay={(day) => {
+            setTab('calendar')
+            setOpenDay(day)
+          }}
+        />
       ) : browsing && openDay !== null ? (
         <DayView
           settings={settings}

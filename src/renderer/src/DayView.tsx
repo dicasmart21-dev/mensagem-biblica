@@ -17,6 +17,7 @@ const longDate = new Intl.DateTimeFormat('pt-BR', {
   year: 'numeric',
   timeZone: 'UTC'
 })
+const shortDate = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'UTC' })
 const dateTime = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
 const asDate = (iso: string): Date => new Date(`${iso}T00:00:00Z`)
 
@@ -34,11 +35,13 @@ interface Props {
   /** Dia da sequência a mostrar; sem isso, mostra o dia de hoje. */
   day?: number
   onOpenSettings(): void
+  /** Quando presente, a tela de hoje avisa dos dias anteriores pendentes e deixa abri-los. */
+  onOpenDay?(day: number): void
   /** Quando presente, mostra um botão para voltar à tela anterior. */
   onBack?(): void
 }
 
-export function DayView({ settings, day: chosen, onOpenSettings, onBack }: Props) {
+export function DayView({ settings, day: chosen, onOpenSettings, onOpenDay, onBack }: Props) {
   const today = todayIso()
   const todayNumber = dayNumberForDate(settings.startDate, today)
   const day = chosen ?? todayNumber
@@ -53,6 +56,27 @@ export function DayView({ settings, day: chosen, onOpenSettings, onBack }: Props
   const [busy, setBusy] = useState<'all' | TextField | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState<TextField | null>(null)
+
+  /** Dias anteriores a hoje ainda sem textos ou com rascunho não aprovado, do mais antigo ao mais novo. */
+  const [pending, setPending] = useState<{ day: number; draft: boolean }[]>([])
+  const watchPending = onOpenDay !== undefined && isToday && day !== null && day > 1
+
+  useEffect(() => {
+    setPending([])
+    if (!watchPending || day === null) return
+    let current = true
+    void window.api.getStatuses(1, day - 1).then((statuses) => {
+      if (!current) return
+      const list: { day: number; draft: boolean }[] = []
+      for (let d = 1; d < day; d++) {
+        if (statuses[d] !== 'approved') list.push({ day: d, draft: statuses[d] === 'draft' })
+      }
+      setPending(list)
+    })
+    return () => {
+      current = false
+    }
+  }, [watchPending, day])
 
   function show(next: Entry | null) {
     setEntry(next)
@@ -144,6 +168,23 @@ export function DayView({ settings, day: chosen, onOpenSettings, onBack }: Props
         <button className="back" onClick={onBack}>
           ← Voltar
         </button>
+      ) : null}
+      {pending.length > 0 && onOpenDay ? (
+        <section className="pending">
+          <p>
+            {pending.length === 1 ? 'Há 1 dia anterior pendente' : `Há ${pending.length} dias anteriores pendentes`} (sem
+            textos ou ainda não aprovado). Clique para abrir:
+          </p>
+          <div className="row">
+            {pending.slice(0, 6).map((p) => (
+              <button key={p.day} onClick={() => onOpenDay(p.day)}>
+                {shortDate.format(asDate(dateForDayNumber(settings.startDate, p.day)))} · {referenceForDay(p.day).label}
+                {p.draft ? ' (rascunho)' : ''}
+              </button>
+            ))}
+            {pending.length > 6 ? <span className="hint">e mais {pending.length - 6}, no Calendário.</span> : null}
+          </div>
+        </section>
       ) : null}
       <section className="card">
         <p className="eyebrow">

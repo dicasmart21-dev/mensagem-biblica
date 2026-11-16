@@ -453,3 +453,20 @@ textarea.body:focus {
   font-size: 13px;
   padding: 4px 10px;
 }
+
+.pending {
+  margin-bottom: 16px;
+  padding: 14px 18px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  font-size: 14px;
+}
+
+.pending p {
+  margin: 0 0 10px;
+}
+
+.pending button {
+  font-size: 13px;
+  padding: 4px 10px;
+}
