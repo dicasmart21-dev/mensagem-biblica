@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { net } from 'electron'
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod'
 import { z } from 'zod'
 import type { Entry, TextField, Texts } from '../shared/api'
@@ -126,13 +127,21 @@ async function ask<S extends z.ZodType>(
   return { output: response.parsed_output as z.infer<S>, content: response.content }
 }
 
+/**
+ * Usa a pilha de rede do Chromium em vez da do Node: ela confia nos certificados
+ * instalados no Windows e respeita o proxy do sistema, como um navegador. Sem isso,
+ * antivírus e proxies que inspecionam HTTPS quebram a conexão (SELF_SIGNED_CERT_IN_CHAIN).
+ */
+const systemFetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+  net.fetch(input as string | Request, init)) as typeof fetch
+
 function setup(day: number) {
   const apiKey = getApiKey()
   if (!apiKey) throw new GenerationError('Informe a chave da API do Claude nas Configurações.')
   const settings = getSettings()
   const ref = referenceForDay(day)
   const chapter = `Capítulo de hoje: ${ref.label}\n\n<capitulo>\n${chapterText(ref.book.id, ref.chapter)}\n</capitulo>`
-  return { client: new Anthropic({ apiKey }), model: settings.model, translation: settings.bible.name, ref, chapter }
+  return { client: new Anthropic({ apiKey, fetch: systemFetch }), model: settings.model, translation: settings.bible.name, ref, chapter }
 }
 
 const correction = (issues: string[], what: string): string =>
