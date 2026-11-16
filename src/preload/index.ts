@@ -9,6 +9,7 @@ const api: AppApi = {
   getEntry: (day) => ipcRenderer.invoke('entries:get', day),
   getStatuses: (from, to) => ipcRenderer.invoke('entries:statuses', from, to),
   searchEntries: (query, status) => ipcRenderer.invoke('entries:search', query, status),
+  exportEntries: (query, status) => ipcRenderer.invoke('entries:export', query, status),
   importBible: () => ipcRenderer.invoke('bible:import'),
   useEmbeddedBible: () => ipcRenderer.invoke('bible:useEmbedded'),
   generate: (day) => ipcRenderer.invoke('entries:generate', day),

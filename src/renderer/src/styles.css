@@ -441,3 +441,15 @@ textarea.body:focus {
 .history .badge {
   margin-left: 0;
 }
+
+.history-count {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.history-count button {
+  font-size: 13px;
+  padding: 4px 10px;
+}

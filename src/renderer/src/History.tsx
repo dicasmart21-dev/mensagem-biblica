@@ -30,6 +30,18 @@ export function History({ settings, filter, onFilterChange, onOpenDay }: Props) 
     }
   }, [filter.query, filter.status])
 
+  const [exported, setExported] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+
+  async function exportResults() {
+    const outcome = await window.api.exportEntries(filter.query, filter.status)
+    if (!outcome) return
+    setExported(
+      outcome.ok
+        ? { kind: 'ok', text: `${outcome.value.count} ${outcome.value.count === 1 ? 'dia exportado' : 'dias exportados'} para ${outcome.value.path}` }
+        : { kind: 'error', text: `Não foi possível exportar: ${outcome.error}` }
+    )
+  }
+
   const filtering = filter.query.trim() !== '' || filter.status !== 'all'
 
   return (
@@ -59,9 +71,13 @@ export function History({ settings, filter, onFilterChange, onOpenDay }: Props) 
         </p>
       ) : (
         <>
-          <p className="hint">
-            {results.length} {results.length === 1 ? 'dia' : 'dias'}
-          </p>
+          <div className="history-count">
+            <p className="hint">
+              {results.length} {results.length === 1 ? 'dia' : 'dias'}
+            </p>
+            <button onClick={() => void exportResults()}>Exportar…</button>
+          </div>
+          {exported ? <p className={exported.kind === 'ok' ? 'saved' : 'error'}>{exported.text}</p> : null}
           <ul className="history">
             {results.map((r) => (
               <li key={r.day}>

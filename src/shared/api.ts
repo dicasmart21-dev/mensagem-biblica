@@ -62,6 +62,8 @@ export interface AppApi {
   setModel(model: ModelId): Promise<Result<Settings>>
   /** Salva a chave cifrada no cofre do sistema; string vazia apaga a chave. */
   setApiKey(apiKey: string): Promise<Result<Settings>>
+  /** Exporta os dias do filtro para CSV ou JSON, em um arquivo escolhido pelo usuário. `null` se cancelar. */
+  exportEntries(query: string, status: EntryStatus | 'all'): Promise<Result<{ path: string; count: number }> | null>
   /** Abre o seletor de arquivo e importa uma Bíblia em JSON. `null` se o usuário cancelar. */
   importBible(): Promise<Result<Settings> | null>
   /** Descarta a Bíblia importada e volta para a embutida. */

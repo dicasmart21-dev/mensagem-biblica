@@ -64,19 +64,22 @@ export function getStatuses(fromDay: number, toDay: number): Record<number, Entr
 }
 
 /** Busca por livro/capítulo e pelo conteúdo dos quatro textos, do dia mais recente ao mais antigo. */
-export function searchEntries(query: string, status: EntryStatus | 'all'): EntrySummary[] {
+export function findEntries(query: string, status: EntryStatus | 'all'): Entry[] {
   const rows = open().prepare('SELECT * FROM entries ORDER BY day DESC').all() as Row[]
   return rows
     .map(toEntry)
     .filter((e) => status === 'all' || e.status === status)
     .filter((e) => matches([referenceForDay(e.day).label, ...Object.values(e.texts)].join('\n'), query))
-    .map((e) => ({
-      day: e.day,
-      status: e.status,
-      impact: e.texts.impact,
-      generatedAt: e.generatedAt,
-      approvedAt: e.approvedAt
-    }))
+}
+
+export function searchEntries(query: string, status: EntryStatus | 'all'): EntrySummary[] {
+  return findEntries(query, status).map((e) => ({
+    day: e.day,
+    status: e.status,
+    impact: e.texts.impact,
+    generatedAt: e.generatedAt,
+    approvedAt: e.approvedAt
+  }))
 }
 
 /** Grava textos recém-gerados como rascunho, substituindo o que houver para o dia. */

@@ -1,9 +1,12 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
-import { join } from 'node:path'
-import { TEXT_FIELDS, type Result, type TextField, type Texts } from '../shared/api'
+import { writeFileSync } from 'node:fs'
+import { extname, join } from 'node:path'
+import { TEXT_FIELDS, type EntryStatus, type Result, type TextField, type Texts } from '../shared/api'
+import { toCsv, toRows } from '../shared/export'
+import { todayIso } from '../shared/rotation'
 import { approvalBlockers } from '../shared/validate'
 import { importBibleFile, removeImportedBible } from './bible'
-import { closeDb, getEntry, getStatuses, searchEntries, setStatus, updateTexts } from './db'
+import { closeDb, findEntries, getEntry, getStatuses, searchEntries, setStatus, updateTexts } from './db'
 import { generateForDay, regenerateText } from './generate'
 import { getSettings, setApiKey, setModel, setStartDate } from './settings'
 
@@ -85,9 +88,29 @@ void app.whenReady().then(() => {
   ipcMain.handle('settings:setApiKey', (_e, v: unknown) => result(() => setApiKey(String(v))))
   ipcMain.handle('entries:get', (_e, day: unknown) => getEntry(asDay(day)))
   ipcMain.handle('entries:statuses', (_e, from: unknown, to: unknown) => getStatuses(asDay(from), asDay(to)))
+  const asStatus = (v: unknown): EntryStatus | 'all' => (v === 'draft' || v === 'approved' ? v : 'all')
   ipcMain.handle('entries:search', (_e, query: unknown, status: unknown) =>
-    searchEntries(String(query ?? ''), status === 'draft' || status === 'approved' ? status : 'all')
+    searchEntries(String(query ?? ''), asStatus(status))
   )
+  ipcMain.handle('entries:export', async (event, query: unknown, status: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender)!
+    const picked = await dialog.showSaveDialog(win, {
+      title: 'Exportar histórico',
+      defaultPath: join(app.getPath('documents'), `palavra-diaria-${todayIso()}.csv`),
+      filters: [
+        { name: 'Planilha (CSV, abre no Excel)', extensions: ['csv'] },
+        { name: 'JSON', extensions: ['json'] }
+      ]
+    })
+    if (picked.canceled || !picked.filePath) return null
+    const path = picked.filePath
+    return result(() => {
+      const rows = toRows(findEntries(String(query ?? ''), asStatus(status)).reverse(), getSettings().startDate)
+      const json = extname(path).toLowerCase() === '.json'
+      writeFileSync(path, json ? JSON.stringify(rows, null, 2) : toCsv(rows))
+      return { path, count: rows.length }
+    })
+  })
   ipcMain.handle('bible:import', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)!
     const picked = await dialog.showOpenDialog(win, {
